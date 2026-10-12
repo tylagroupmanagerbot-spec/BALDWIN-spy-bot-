@@ -1,0 +1,52 @@
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Baldwin Spy</title>
+<style>body{margin:0;background:#0a0a0a;color:#fff;font-family:sans-serif;display:flex}.sidebar{width:260px;background:#111;height:100vh;position:fixed;padding:20px;border-right:1px solid #222}.sidebar h2{color:#00ff88}.menu div{padding:13px;border-radius:10px;cursor:pointer;margin-bottom:5px;color:#888}.menu div.active{background:#00ff88;color:#000;font-weight:700}.main{margin-left:300px;padding:30px;width:100%}.card{background:#181818;border:1px solid #222;border-radius:16px;padding:25px;display:none}.card.show{display:block}.input{width:100%;padding:12px;margin:8px 0;border-radius:10px;border:1px solid #333;background:#222;color:#fff}.btn{background:#00ff88;color:#000;border:0;padding:12px 22px;border-radius:10px;font-weight:700;cursor:pointer}</style>
+</head><body>
+<div class="sidebar"><h2>👻 BALDWIN SPY</h2><div class="menu">
+<div class="active" onclick="tab('connect',this)">🔗 Connect bot</div>
+<div onclick="tab('instructions',this)">📖 Instructions</div>
+<div onclick="tab('features',this)">⚡ Bot features</div>
+<div onclick="tab('subscription',this)">💳 Subscription</div>
+<div onclick="tab('history',this)">🕘 History</div>
+<div onclick="tab('settings',this)">⚙️ Settings</div>
+<div onclick="tab('partner',this)">🤝 Partner program</div>
+<div onclick="tab('help',this)">❓ Help</div>
+<div onclick="tab('lang',this)">🌐 Lang</div>
+</div></div>
+
+<div class="main">
+<div id="connect" class="card show">
+<h3>🔗 Connect bot -> Connect to your account</h3>
+<p>Link your bot to your Telegram account</p>
+<input class="input" id="bot_token" placeholder="BOT_TOKEN from @BotFather - e.g 123456:AAH...">
+<input class="input" id="api_id" placeholder="API_ID from my.telegram.org">
+<input class="input" id="api_hash" placeholder="API_HASH">
+<input class="input" id="phone" placeholder="YOUR PHONE +234...">
+<input class="input" id="code" placeholder="Telegram OTP Code">
+<button class="btn" onclick="doConnect()">✅ CONNECT NOW</button>
+<p id="status"></p>
+</div>
+
+<div id="instructions" class="card"><h3>📖 Instructions</h3><p>1. @BotFather -> /newbot -> copy BOT_TOKEN<br>2. my.telegram.org -> get API_ID/HASH<br>3. Paste here in Connect bot<br>4. Deploy to Render: npm install, npm start<br>5. Type: Background Worker</p></div>
+<div id="features" class="card"><h3>⚡ Bot features</h3><p>✅ Endless gist - never stops<br>✅ Hides your number<br>✅ Logs chats<br>✅ AI human reply<br>✅ Auto pause when you online<br>✅ 24/7 Render</p></div>
+<div id="subscription" class="card"><h3>💳 Subscription</h3><p>Free: Unlimited | Pro $5/mo: 5 bots + priority AI</p><button class="btn">Upgrade to Pro</button></div>
+<div id="history" class="card"><h3>🕘 History</h3><div id="hist">Loading...</div></div>
+<div id="settings" class="card"><h3>⚙️ Settings</h3><input class="input" value="Baldwin"><label><input type="checkbox" checked> Endless Mode</label><br><br><button class="btn">Save</button></div>
+<div id="partner" class="card"><h3>🤝 Partner program</h3><p>Link: https://baldwinspy.com/r/12345<br>Earned: $24</p></div>
+<div id="help" class="card"><h3>❓ Help</h3><p>Support: @baldwin_support<br>Bot not replying? Check BOT_TOKEN</p></div>
+<div id="lang" class="card"><h3>🌐 Lang</h3><select class="input"><option>English</option><option>Pidgin</option></select></div>
+</div>
+
+<script>
+function tab(id,el){
+document.querySelectorAll('.card').forEach(c=>c.classList.remove('show'));
+document.getElementById(id).classList.add('show');
+document.querySelectorAll('.menu div').forEach(m=>m.classList.remove('active'));
+el.classList.add('active');
+if(id=='history'){fetch('/api/history').then(r=>r.json()).then(d=>{document.getElementById('hist').innerHTML=d.map(h=>`<p><b>${h.name}:</b> ${h.text} -> ${h.reply}</p>`).join('')||'No chats';})}
+}
+function doConnect(){
+const data={bot_token:bot_token.value,api_id:api_id.value,api_hash:api_hash.value,phone:phone.value,code:code.value};
+fetch('/api/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json()).then(r=>{document.getElementById('status').innerText=r.ok?'✅ Connected! Restarting...':'❌ '+r.error;});
+}
+</script>
+</body></html>
