@@ -1,53 +1,126 @@
-const config = require('./config');
 require('dotenv').config();
+const { Telegraf } = require('telegraf');
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
-const { Telegraf } = require('telegraf');
 const { TelegramClient } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 const OpenAI = require('openai');
+const path = require('path');
+const fs = require('fs');
+
+const config = require('./config');
+const BaldwinSpy = require('./spy');
+const AlwaysOnline = require('./alwaysonline');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
-let MEMORY = fs.existsSync('memory.json')? JSON.parse(fs.readFileSync('memory.json')) : { history:[], connected:false, account:null };
-const save = () => fs.writeFileSync('memory.json', JSON.stringify(MEMORY,null,2));
+const bot = new Telegraf(process.env.BOT_TOKEN);
+const ai = process.env.OPENAI_KEY ? new OpenAI({ apiKey: process.env.OPENAI_KEY }) : null;
 
-// Dashboard APIs
-app.get('/api/stats', (req,res) => res.json({ connected: MEMORY.connected, account: MEMORY.account, total: MEMORY.history.length }));
-app.get('/api/history', (req,res) => res.json(MEMORY.history));
+let userClient = null;
+let spy = null;
+let online = null;
 
-// CONNECT FLOW API
-app.post('/api/connect', async (req,res) => {
-  const { bot_token, api_id, api_hash, phone, code } = req.body;
-  try{
-    // Save env
-    MEMORY.connected = true;
-    MEMORY.account = phone;
-    MEMORY.bot_token = bot_token;
-    save();
-    fs.appendFileSync('.env', `\nBOT_TOKEN=${bot_token}\nAPI_ID=${api_id}\nAPI_HASH=${api_hash}\nPHONE=${phone}\n`);
-    res.json({ ok:true, message: "Connected! Session saved. Restart bot." });
-  }catch(e){ res.json({ ok:false, error:e.message }); }
-});
-
-// Start Telegraf if BOT_TOKEN exists
-if(process.env.BOT_TOKEN){
-  const bot = new Telegraf(process.env.BOT_TOKEN);
-  const ai = new OpenAI({ apiKey: process.env.AI_KEY, baseURL:"https://openrouter.ai/api/v1" });
-  bot.start(ctx => ctx.reply("👻 Baldwin Spy Online - Endless Mode"));
-  bot.on('text', async ctx => {
-    const reply = await ai.chat.completions.create({
-      model:"meta-llama/llama-3-8b-instruct:free",
-      messages:[{role:"system",content:"You are human PH boy, never end chat, always ask question back, short 1 line pidgin"},{role:"user",content:ctx.message.text}]
-    }).then(r=>r.choices[0].message.content).catch(()=>`Yeah ${ctx.from.first_name}, I dey here, tell me more na?`);
-    MEMORY.history.push({ name:ctx.from.first_name, text:ctx.message.text, reply, date:new Date().toISOString() }); save();
-    ctx.reply(reply);
-  });
-  bot.launch();
+// INIT USER CLIENT
+async function initUserClient() {
+  if (!process.env.API_ID || !process.env.API_HASH) return;
+  const session = new StringSession("");
+  userClient = new TelegramClient(session, parseInt(process.env.API_ID), process.env.API_HASH, { connectionRetries: 5 });
+  await userClient.connect();
+  online = new AlwaysOnline(userClient);
+  online.start();
+  spy = new BaldwinSpy(userClient, bot, ai);
 }
 
-app.listen(process.env.PORT||3000, ()=>console.log("Dashboard + Bot Running on 3000"));
+// BOT COMMANDS
+
+bot.start(async (ctx) => {
+  const name = ctx.from.first_name;
+  const botUsername = ctx.botInfo.username;
+  await ctx.reply(
+`👻 *BALDWIN SPY BOT* 👻
+
+Hello ${name}!
+
+24/7 bot wey go dey gist for you.
+✅✅ Double tick
+🟢 Always Online
+♾️ Endless Gist
+
+Click [Menu ☰] below:`,
+{
+  parse_mode: "Markdown",
+  reply_markup: {
+    inline_keyboard: [
+      [{ text: "🔴 🔗 Connect", callback_data: "connect" }],
+      [{ text: "🟣 📖 Instructions", callback_data: "instructions" }],
+      [{ text: "🔵 ⚡ Features", callback_data: "features" }],
+      [{ text: "🟠 🕘 History", callback_data: "history" }],
+      [{ text: "🟢 ⚙️ Settings", callback_data: "settings" }],
+      [{ text: "⚪ ❓ Help", callback_data: "help" }],
+      [{ text: "➕ ADD BOT TO GROUP", url: `https://t.me/${botUsername}?startgroup=true&admin=post_messages+delete_messages+pin_messages+invite_users` }]
+    ]
+  }
+}
+  );
+});
+
+bot.action('connect', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.reply(`🔗 *CONNECT*\n\n1. Go to @BotFather get BOT_TOKEN\n2. Go to my.telegram.org get API_ID & API_HASH\n3. Put them in .env\n4. Open Dashboard to connect`, { parse_mode: "Markdown" });
+});
+bot.action('instructions', async (ctx) => { await ctx.answerCbQuery(); await ctx.reply("📖 Instructions: Create bot, get API, put in .env, deploy."); });
+bot.action('features', async (ctx) => { await ctx.answerCbQuery(); await ctx.reply("⚡ Features: ✅✅ Double Tick, 🟢 Always Online, ♾️ Endless, 👻 Hide Number, Group Spy"); });
+bot.action('history', async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!fs.existsSync('memory.json')) return ctx.reply("No history yet");
+  const data = JSON.parse(fs.readFileSync('memory.json'));
+  const last = data.history.slice(-5).map(h => `${h.name}: ${h.userMsg}`).join('\n');
+  await ctx.reply(`🕘 Last Chats:\n${last}`);
+});
+bot.action('settings', async (ctx) => { await ctx.answerCbQuery(); await ctx.reply(`⚙️ Settings:\nEndless: ${config.settings.endlessMode}\nDoubleTick: ${config.settings.doubleTick}\nOnline: ${config.settings.onlineMode}`); });
+bot.action('help', async (ctx) => { await ctx.answerCbQuery(); await ctx.reply("❓ Help: Type /start for menu. Add bot to group with admin rights."); });
+
+bot.on('new_chat_members', async (ctx) => {
+  if (ctx.message.new_chat_members.some(m => m.username === ctx.botInfo.username)) {
+    await ctx.reply(`👻 Thanks for adding me! Make me ADMIN to enable ✅✅ and 🟢 Online`);
+  }
+});
+
+bot.on('text', async (ctx) => {
+  if (ctx.message.text.startsWith('/')) return;
+  if (userClient) {
+    try { await userClient.invoke(new (require('telegram').Api.account.UpdateStatus)({ offline: false }); } catch(e){}
+  }
+  if (spy) {
+    await spy.handleIncomingMessage(ctx);
+  } else {
+    await ctx.sendChatAction('typing');
+    await new Promise(r => setTimeout(r, 1000));
+    await ctx.reply(`Hey ${ctx.from.first_name}, bot dey online 🟢, you don chop?`);
+  }
+});
+
+// API ROUTES FOR DASHBOARD
+app.get('/api/history', (req, res) => {
+  if (!fs.existsSync('memory.json')) return res.json([]);
+  res.json(JSON.parse(fs.readFileSync('memory.json')).history);
+});
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, async () => {
+  console.log(`Server running on ${PORT}`);
+  await initUserClient();
+  bot.launch();
+  console.log("Bot launched");
+});
+
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
